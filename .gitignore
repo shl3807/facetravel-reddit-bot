@@ -1,0 +1,38 @@
+# 忽略文件
+
+# 依赖
+node_modules/
+
+# 敏感信息
+.env
+
+# OpenClaw 系统文件
+.openclaw/
+
+# 不忽略 .gitignore 本身
+!.gitignore
+
+# 日志
+*.log
+
+# 操作系统文件
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# 临时文件
+*.tmp
+*.temp
+
+# 生成的产品信息（可选，如果想跟踪可以删除这行）
+product_info.json
+
+# 截图
+*.png
+*.jpg
+*.jpeg

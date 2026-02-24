@@ -1,0 +1,73 @@
+# GitHub Actions 自动化发布 Reddit 帖子
+
+name: Post to Reddit
+
+on:
+  # 手动触发
+  workflow_dispatch:
+    inputs:
+      product_id:
+        description: 'Product ID to scrape'
+        required: true
+        default: '55'
+      subreddit:
+        description: 'Subreddit to post to'
+        required: true
+        default: 'solotravel'
+  
+  # 定时触发（可选）
+  # schedule:
+  #   - cron: '0 9 * * 1'  # 每周一早上9点
+
+jobs:
+  scrape-and-post:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+    
+    - name: Install dependencies
+      run: |
+        npm install playwright
+        npx playwright install chromium
+    
+    - name: Scrape product info
+      run: |
+        node scraper_playwright.js ${{ github.event.inputs.product_id || '55' }}
+    
+    - name: Upload product info
+      uses: actions/upload-artifact@v4
+      with:
+        name: product-info
+        path: product_info.json
+    
+    # 这里可以添加 Reddit 发布步骤
+    # 需要使用 Reddit API 或第三方工具
+    - name: Generate Reddit post
+      run: |
+        echo "产品信息已抓取完成"
+        echo "请手动复制以下内容到 Reddit:"
+        cat product_info.json | jq -r '.title'
+        echo ""
+        echo "完整内容已保存到 product_info.json"
+
+  # 可选：创建 Reddit 帖子（需要配置 Reddit API）
+  # post-to-reddit:
+  #   needs: scrape-and-post
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #   - name: Post to Reddit
+  #     env:
+  #       REDDIT_CLIENT_ID: ${{ secrets.REDDIT_CLIENT_ID }}
+  #       REDDIT_CLIENT_SECRET: ${{ secrets.REDDIT_CLIENT_SECRET }}
+  #       REDDIT_USERNAME: ${{ secrets.REDDIT_USERNAME }}
+  #       REDDIT_PASSWORD: ${{ secrets.REDDIT_PASSWORD }}
+  #     run: |
+  #       # 使用 Reddit API 发布帖子
+  #       # 需要额外配置
