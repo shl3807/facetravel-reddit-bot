@@ -1,0 +1,160 @@
+# GitHub Actions 自动化抓取和生成 Reddit 帖子
+
+name: Scrape Products & Generate Reddit Posts
+
+on:
+  # 手动触发 - 单个产品
+  workflow_dispatch:
+    inputs:
+      product_id:
+        description: 'Product ID to scrape (leave empty for batch)'
+        required: false
+        default: ''
+      start_id:
+        description: 'Batch start ID'
+        required: false
+        default: '1'
+      count:
+        description: 'Batch count'
+        required: false
+        default: '10'
+      mode:
+        description: 'Mode'
+        required: true
+        default: 'batch'
+        type: choice
+        options:
+          - single
+          - batch
+  
+  # 定时触发 - 每周一早上 9 点 UTC 自动运行
+  schedule:
+    - cron: '0 9 * * 1'
+  
+  # 每次推送到 main 分支时触发
+  push:
+    branches:
+      - main
+    paths:
+      - 'scraper_*.js'
+      - '.github/workflows/*.yml'
+
+jobs:
+  scrape-products:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+    
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+    
+    - name: Cache Playwright browsers
+      uses: actions/cache@v4
+      with:
+        path: ~/.cache/ms-playwright
+        key: ${{ runner.os }}-playwright-${{ hashFiles('**/package-lock.json') }}
+    
+    - name: Install dependencies
+      run: |
+        npm install playwright
+        npx playwright install chromium
+    
+    - name: Scrape single product
+      if: github.event.inputs.mode == 'single' && github.event.inputs.product_id != ''
+      run: |
+        echo "🔍 抓取单个产品: ${{ github.event.inputs.product_id }}"
+        node scraper_playwright.js ${{ github.event.inputs.product_id }}
+    
+    - name: Scrape batch products
+      if: github.event.inputs.mode == 'batch' || github.event.inputs.mode == ''
+      run: |
+        echo "🔍 批量抓取产品"
+        echo "起始 ID: ${{ github.event.inputs.start_id || '1' }}"
+        echo "数量: ${{ github.event.inputs.count || '10' }}"
+        node scraper_batch.js ${{ github.event.inputs.start_id || '1' }} ${{ github.event.inputs.count || '10' }}
+    
+    - name: Generate Reddit posts
+      run: |
+        echo "📝 生成 Reddit 帖子..."
+        node generate_reddit_posts.js || echo "generate_reddit_posts.js 不存在，跳过"
+    
+    - name: Upload products data
+      uses: actions/upload-artifact@v4
+      with:
+        name: products-data
+        path: |
+          product_info.json
+          products_batch.json
+        retention-days: 30
+    
+    - name: Commit and push results
+      run: |
+        git config user.name "GitHub Actions"
+        git config user.email "actions@github.com"
+        
+        # 检查是否有新文件
+        if [ -f "products_batch.json" ]; then
+          git add products_batch.json
+        fi
+        if [ -f "product_info.json" ]; then
+          git add product_info.json
+        fi
+        
+        # 检查 reddit-doc 目录是否有更新
+        if [ -d "reddit-doc" ]; then
+          git add reddit-doc/
+        fi
+        
+        # 提交更改
+        if git diff --staged --quiet; then
+          echo "✅ 没有新的更改需要提交"
+        else
+          git commit -m "Auto: Update scraped products data [$(date +%Y-%m-%d)]"
+          git push
+          echo "✅ 已推送更新到仓库"
+        fi
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    
+    - name: Summary
+      run: |
+        echo "=========================================="
+        echo "📊 抓取完成摘要"
+        echo "=========================================="
+        
+        if [ -f "products_batch.json" ]; then
+          echo "✅ 批量数据已保存: products_batch.json"
+          echo "产品数量: $(cat products_batch.json | jq '.total')"
+        fi
+        
+        if [ -f "product_info.json" ]; then
+          echo "✅ 单个产品数据已保存: product_info.json"
+          echo "产品标题: $(cat product_info.json | jq -r '.title')"
+        fi
+        
+        echo ""
+        echo "📁 Reddit 文档目录:"
+        ls -la reddit-doc/ 2>/dev/null || echo "目录不存在"
+        
+        echo ""
+        echo "🔗 查看结果:"
+        echo "https://github.com/${{ github.repository }}/blob/main/products_batch.json"
+        echo "https://github.com/${{ github.repository }}/tree/main/reddit-doc"
+
+  # 可选：部署到 GitHub Pages（如果需要展示结果）
+  # deploy:
+  #   needs: scrape-products
+  #   runs-on: ubuntu-latest
+  #   if: github.ref == 'refs/heads/main'
+  #   steps:
+  #   - name: Deploy to GitHub Pages
+  #     uses: peaceiris/actions-gh-pages@v3
+  #     with:
+  #       github_token: ${{ secrets.GITHUB_TOKEN }}
+  #       publish_dir: ./reddit-doc
